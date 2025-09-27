@@ -110,69 +110,81 @@ def hours_since_first_sip(consumed: List[Consumed]) -> float:
 # A as defined by user: total volume (ml) * % * density / 10
 # Note: We compute with overall total across consumed list
 
-def compute_A_value(consumed: List[Consumed], drinks: List[Drink]) -> float:
-    drink_lookup = {d.name: d for d in drinks}
-    total_A = 0.0
-    for c in consumed:
-        d = drink_lookup.get(c.drink_name)
-        if not d:
-            continue
-        vol_ml_total = d.volume_ml * c.quantity
-        A = (vol_ml_total * (d.percent_abv / 100.0) * ALCOHOL_DENSITY) / 10.0
-        total_A += A
-    return total_A
+def ethanol_grams(consumed: List[Consumed], drinks: List[Drink]) -> float:
+    # Total ethanol in grams
+    return total_alcohol_grams(consumed, drinks)
+
+def widmark_bac_from_grams(grams: float, W_kg: float, r: float, beta60: float, t_hours: float) -> float:
+    # BAC g/dL using Widmark (metric): divide by body water in dL ≈ (W_kg * r * 10)
+    if W_kg <= 0 or r <= 0:
+        return 0.0
+    bac = (grams / (W_kg * r * 10.0)) - (beta60 * t_hours)
+    return max(0.0, bac)
 
 
-def matthews_miller(consumed: List[Consumed], profile: Profile, beta60: float, t_hours: float) -> float:
-    c_std = standard_drinks_from_grams(total_alcohol_grams(consumed, app.drinks))
+def matthews_miller(consumed: List[Consumed], drinks: List[Drink], profile: Profile, beta60: float, t_hours: float) -> float:
+    grams = ethanol_grams(consumed, drinks)
+    c_std = standard_drinks_from_grams(grams)
     GC = 9.0 if profile.sex.lower().startswith('f') else 7.5
     w_lb = profile.weight_kg / POUNDS_TO_KG
     bac = ((c_std / 2.0) * (GC / w_lb)) - (beta60 * t_hours)
     return max(0.0, bac)
 
+def forrest(consumed: List[Consumed], drinks: List[Drink], profile: Profile, beta60: float, t_hours: float) -> float:
+    # A is grams/10, per definition: total ethanol grams ÷ 10
+    grams = ethanol_grams(consumed, drinks)
+    A = grams / 10.0
 
-def forrest(consumed: List[Consumed], profile: Profile, beta60: float, t_hours: float) -> float:
-    A = compute_A_value(consumed, app.drinks)
     W = profile.weight_kg
     H_m = profile.height_cm / 100.0
-    BMI = W / (H_m ** 2) if H_m > 0 else 0
+    BMI = (W / (H_m ** 2)) if H_m > 0 else 0.0
+
+    # rf = % body fat from BMI
     if profile.sex.lower().startswith('f'):
-        rf = (1.371 * BMI) - 3.467  # as provided (percentage body fat)
+        rf_pct = (1.371 * BMI) - 3.467
     else:
-        rf = (1.340 * BMI) - 12.469
-    # Interpret rf as a percentage -> convert to fraction if > 1 to avoid huge denominators
-    rf_eff = rf / 100.0 if rf > 1 else rf
-    bac = (A / (W * rf_eff)) - (beta60 * t_hours) if rf_eff > 0 else 0.0
+        rf_pct = (1.340 * BMI) - 12.469
+
+    # Clamp to avoid absurd or negative values
+    rf_pct = max(0.0, min(60.0, rf_pct))
+
+    # Lean body mass (kg) → TBW in liters
+    lean_mass_kg = W * (1.0 - rf_pct / 100.0)
+    tbw_L = 0.73 * max(0.0, lean_mass_kg)
+
+    if tbw_L <= 0:
+        return 0.0
+
+    # A is g/10 → divide by L → g/dL
+    bac = (A / tbw_L) - (beta60 * t_hours)
     return max(0.0, bac)
 
-
-def lewis(consumed: List[Consumed], profile: Profile, beta60: float, t_hours: float) -> float:
-    A = compute_A_value(consumed, app.drinks)
+def lewis(consumed: List[Consumed], drinks: List[Drink], profile: Profile, beta60: float, t_hours: float) -> float:
+    grams = ethanol_grams(consumed, drinks)
     W = profile.weight_kg
-    rl = 0.68 if profile.sex.lower().startswith('f') else 0.76
-    bac = (A / (W * rl)) - (beta60 * t_hours)
-    return max(0.0, bac)
+    r = 0.68 if profile.sex.lower().startswith('f') else 0.76
+    return widmark_bac_from_grams(grams, W, r, beta60, t_hours)
 
-
-def nhtsa(consumed: List[Consumed], profile: Profile, beta60: float, t_hours: float) -> float:
-    # BAC = (A*0.806)/(W*TBW*1000) * 100 -(β60 * t)
-    A = compute_A_value(consumed, app.drinks)
+def nhtsa(consumed: List[Consumed], drinks: List[Drink], profile: Profile, beta60: float, t_hours: float) -> float:
+    grams = ethanol_grams(consumed, drinks)
     W = profile.weight_kg
-    TBW = 0.49 if profile.sex.lower().startswith('f') else 0.58
-    bac = ((A * 0.806) / (W * TBW * 1000.0)) * 100.0 - (beta60 * t_hours)
-    return max(0.0, bac)
+    # Use TBW fraction similar to NHTSA simplification
+    r = 0.49 if profile.sex.lower().startswith('f') else 0.58
+    return widmark_bac_from_grams(grams, W, r, beta60, t_hours)
 
-
-def watson(consumed: List[Consumed], profile: Profile, beta60: float, t_hours: float) -> float:
-    A = compute_A_value(consumed, app.drinks)
+def watson(consumed: List[Consumed], drinks: List[Drink], profile: Profile, beta60: float, t_hours: float) -> float:
+    grams = ethanol_grams(consumed, drinks)
     W = profile.weight_kg
     h_cm = profile.height_cm
     y = profile.age
+    # rw in liters (TBW)
     if profile.sex.lower().startswith('f'):
         rw = (-2.097 + 0.1069 * h_cm + 0.04666 * W)
     else:
         rw = (2.447 - 0.09515 * y + 0.1074 * h_cm + 0.3362 * W)
-    bac = (A / (W * rw)) - (beta60 * t_hours) if rw > 0 else 0.0
+    if rw <= 0:
+        return 0.0
+    bac = (grams / (rw * 10.0)) - (beta60 * t_hours)  # L → dL
     return max(0.0, bac)
 
 
@@ -600,11 +612,11 @@ class CalculateFrame(ttk.Frame):
             absorp_done_at = first_time + absorption_window(ate)
 
         # Compute BAC by models
-        mm = matthews_miller(self.controller.consumed, p, beta, t_hours)
-        fr = forrest(self.controller.consumed, p, beta, t_hours)
-        lw = lewis(self.controller.consumed, p, beta, t_hours)
-        nh = nhtsa(self.controller.consumed, p, beta, t_hours)
-        wt = watson(self.controller.consumed, p, beta, t_hours)
+        mm = matthews_miller(self.controller.consumed, self.controller.drinks, p, beta, t_hours)
+        fr = forrest(self.controller.consumed, self.controller.drinks, p, beta, t_hours)
+        lw = lewis(self.controller.consumed, self.controller.drinks, p, beta, t_hours)
+        nh = nhtsa(self.controller.consumed, self.controller.drinks, p, beta, t_hours)
+        wt = watson(self.controller.consumed, self.controller.drinks, p, beta, t_hours)
 
         # Aggregate (simple mean) for overall estimate
         values = [mm, fr, lw, nh, wt]
@@ -655,21 +667,25 @@ class InfoFrame(ttk.Frame):
         txt = tk.Text(self, wrap='word')
         txt.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
         txt.insert(tk.END, (
-            "Models used (as provided):\n\n"
-            "• Matthews & Miller (1979): BAC = [(c/2) * (GC/w)] - (β60*t)\n"
-            "    c: standard drinks (US 14 g per drink). GC: gender constant (9.0 female, 7.5 male).\n"
-            "    w: weight (lb). β60: metabolism per hour (g/dL). t: hours since first sip.\n\n"
-            "• Forrest (1986): BAC = A/(W*rf) - (β60*t)\n"
-            "    BMI = W/H² (kg, m). For males: rf = 1.340*BMI - 12.469; females: rf = 1.371*BMI - 3.467.\n\n"
-            "• Lewis (1986): BAC = A/(W*rl) - (β60*t), where rl = 0.76 (men), 0.68 (women).\n\n"
-            "• NHTSA (1994): BAC = (A*0.806)/(W*TBW*1000)*100 - (β60*t), TBW = 0.58 (men), 0.49 (women).\n\n"
-            "• Watson et al. (1981): BAC = A/(W*rw) - (β60*t), with rw (TBW) in L:\n"
-            "    males: rw = 2.447 - 0.09515*y + 0.1074*h + 0.3362*W;\n"
-            "    females: rw = -2.097 + 0.1069*h + 0.04666*W.\n\n"
-            "Units: A = total volume (ml) × %ABV × density (0.79 g/ml) ÷ 10. W in kg, h in cm, y in years.\n\n"
-            "Important health info: Alcohol affects people differently. Eating can delay absorption.\n"
-            "Never drink and drive. Use this only as a rough estimate, not for safety-critical decisions.\n"
-        ))
+    "Models used:\n\n"
+    "• Matthews & Miller (1979): BAC = [(c/2) * (GC/w)] - (β60*t)\n"
+    "    c: standard drinks (US 14 g per drink). GC: gender constant (9.0 female, 7.5 male).\n"
+    "    w: weight (lb). β60: metabolism per hour (g/dL). t: hours since first sip.\n\n"
+    "• Forrest (1986): BAC = A/TBW − (β60*t)\n"
+    "    BMI = W/H² (kg, m). For males: %fat = 1.340*BMI − 12.469;\n"
+    "    females: %fat = 1.371*BMI − 3.467.\n"
+    "    Lean mass = W × (1 − %fat/100).\n"
+    "    TBW ≈ 0.73 × Lean mass (liters).\n\n"
+    "• Lewis (1986): BAC = A/(W*rl) - (β60*t), where rl = 0.76 (men), 0.68 (women).\n\n"
+    "• NHTSA (1994): BAC = (A*0.806)/(W*TBW*1000)*100 - (β60*t), TBW = 0.58 (men), 0.49 (women).\n\n"
+    "• Watson et al. (1981): BAC = A/(W*rw) - (β60*t), with rw (TBW) in L:\n"
+    "    males: rw = 2.447 - 0.09515*y + 0.1074*h + 0.3362*W;\n"
+    "    females: rw = -2.097 + 0.1069*h + 0.04666*W.\n\n"
+    "Units: A = total volume (ml) × %ABV × density (0.79 g/ml) ÷ 10.\n"
+    "W in kg, h in cm, y in years.\n\n"
+    "Important health info: Alcohol affects people differently. Eating can delay absorption.\n"
+    "Never drink and drive. Use this only as a rough estimate, not for safety-critical decisions.\n"
+))
         txt.configure(state='disabled')
 
 
