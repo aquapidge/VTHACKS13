@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 import json
 import os
 from datetime import datetime, timedelta
+from PIL import Image, ImageTk  # put this at the top of your file
 
 # -----------------------------
 # Data models
@@ -208,6 +209,10 @@ def estimate_sober_time(current_bac: float, beta60: float) -> Optional[datetime]
 class BloodAlcCalcApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        # Use your logo as the app window/taskbar icon
+        logo_icon = tk.PhotoImage(file="bloodalccalclogo.png")
+        self.iconphoto(False, logo_icon)
+        self.logo_icon = logo_icon  # keep a reference
         self.title("BloodAlcCalc")
         self.geometry("980x680")
         self.minsize(900, 600)
@@ -224,7 +229,14 @@ class BloodAlcCalcApp(tk.Tk):
         # Header
         header = ttk.Frame(self)
         header.pack(fill=tk.X, padx=16, pady=12)
-        ttk.Label(header, text="BloodAlcCalc", font=("Segoe UI", 24, "bold")).pack(side=tk.LEFT)
+
+        # Load and resize logo
+        img = Image.open("bloodalccalclogo.png").resize((200, 60))  # tweak size as needed
+        logo = ImageTk.PhotoImage(img)
+
+        ttk.Label(header, image=logo).pack(side=tk.LEFT, padx=8)
+
+        self.header_logo = logo  # keep a reference so image doesn’t vanish
 
         # Navigation buttons
         nav = ttk.Frame(self)
@@ -430,7 +442,8 @@ class DrinksFrame(ttk.Frame):
         ttk.Button(btns, text="Delete Selected", command=self.delete_drink).pack(side=tk.LEFT, padx=6)
 
         # Drinks list
-        self.tree = ttk.Treeview(self, columns=("volume", "abv"), show='headings', height=12)
+        self.tree = ttk.Treeview(self, columns=("Drink Name", "volume", "abv"), show='headings', height=12)
+        self.tree.heading("Drink Name", text="Drink Name")
         self.tree.heading("volume", text="Volume (ml)")
         self.tree.heading("abv", text="ABV %")
         self.tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
