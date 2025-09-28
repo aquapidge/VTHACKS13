@@ -349,19 +349,42 @@ class ProfileFrame(ttk.Frame):
         ttk.Button(btns, text="Delete Selected", command=self.delete_profile).pack(side=tk.LEFT, padx=6)
 
         # Profiles list
-        self.tree = ttk.Treeview(self, columns=("age", "height", "sex", "weight", "eaten"), show='headings', height=10)
-        for col, txt in zip(self.tree["columns"], ["Age", "Height (cm)", "Sex", "Weight (kg)", "Ate" ]):
-            self.tree.heading(col, text=txt)
+        self.tree = ttk.Treeview(
+            self,
+            columns=("name", "age", "height", "sex", "weight", "eaten"),
+            show='headings',
+            height=10
+)
+
+        # Define headers
+        self.tree.heading("name", text="Name")
+        self.tree.heading("age", text="Age")
+        self.tree.heading("height", text="Height (cm)")
+        self.tree.heading("sex", text="Sex")
+        self.tree.heading("weight", text="Weight (kg)")
+        self.tree.heading("eaten", text="Ate")
+
+        # Set column widths
+        self.tree.column("name", width=120, anchor="center")
+        self.tree.column("age", width=60, anchor="center")
+        self.tree.column("height", width=100, anchor="center")
+        self.tree.column("sex", width=80, anchor="center")
+        self.tree.column("weight", width=100, anchor="center")
+        self.tree.column("eaten", width=60, anchor="center")
+
         self.tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         self.tree.bind('<<TreeviewSelect>>', self.on_select)
-
-        self.bind('<<ShowFrame>>', lambda e: self.refresh())
 
     def refresh(self):
         for i in self.tree.get_children():
             self.tree.delete(i)
         for p in self.controller.profiles:
-            self.tree.insert('', tk.END, iid=p.name, values=(p.age, f"{p.height_cm:.1f}", p.sex, f"{p.weight_kg:.1f}", 'Yes' if p.eaten_recently else 'No'))
+            self.tree.insert(
+                '',
+                tk.END,
+                iid=p.name,
+                values=(p.name, p.age, f"{p.height_cm:.1f}", p.sex, f"{p.weight_kg:.1f}", 'Yes' if p.eaten_recently else 'No')
+        )
 
     def add_profile(self):
         try:
@@ -455,7 +478,7 @@ class DrinksFrame(ttk.Frame):
         for i in self.tree.get_children():
             self.tree.delete(i)
         for d in self.controller.drinks:
-            self.tree.insert('', tk.END, iid=d.name, values=(f"{d.volume_ml:.0f}", f"{d.percent_abv:.2f}"))
+            self.tree.insert('', tk.END, iid=d.name, values=(d.name, f"{d.volume_ml:.0f}", f"{d.percent_abv:.2f}"))
 
     def add_drink(self):
         try:
