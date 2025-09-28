@@ -190,9 +190,15 @@ def estimate_sober_time(current_bac: float, beta60: float) -> Optional[datetime]
 # -----------------------------
 # Main Application (Tkinter)
 # -----------------------------
+       
 class BloodAlcCalcApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        # Apply theme (Segoe UI is nice & consistent)
+        style = ttk.Style(self)
+        self.option_add("*Font", ("Segoe UI", 10))
+        style.configure("Treeview", rowheight=28, font=("Segoe UI", 10))
+        style.configure("Treeview.Heading", font=("Segoe UI", 11, "bold"))
         # Use your logo as the app window/taskbar icon
         logo_icon = tk.PhotoImage(file="bloodalccalclogo.png")
         self.iconphoto(False, logo_icon)
@@ -310,21 +316,26 @@ class ProfileFrame(ttk.Frame):
         hrow = ttk.Frame(frm)
         hrow.grid(row=r, column=1, sticky='w')
         ttk.Entry(hrow, textvariable=self.height, width=10).pack(side=tk.LEFT)
-        ttk.Combobox(hrow, values=['cm', 'in'], width=5, state='readonly', textvariable=self.height_unit).pack(side=tk.LEFT, padx=4)
+        ttk.Combobox(hrow, values=['cm', 'in'], width=5, state='readonly',
+                     textvariable=self.height_unit).pack(side=tk.LEFT, padx=4)
 
         r += 1
         ttk.Label(frm, text="Sex").grid(row=r, column=0, sticky='w', padx=6, pady=6)
-        ttk.Combobox(frm, values=['male', 'female'], state='readonly', textvariable=self.sex, width=10).grid(row=r, column=1, sticky='w', padx=6, pady=6)
+        ttk.Combobox(frm, values=['male', 'female'], state='readonly',
+                     textvariable=self.sex, width=10).grid(row=r, column=1, sticky='w', padx=6, pady=6)
 
         r += 1
         ttk.Label(frm, text="Weight").grid(row=r, column=0, sticky='w', padx=6, pady=6)
         wrow = ttk.Frame(frm)
         wrow.grid(row=r, column=1, sticky='w')
         ttk.Entry(wrow, textvariable=self.weight, width=10).pack(side=tk.LEFT)
-        ttk.Combobox(wrow, values=['kg', 'lb'], width=5, state='readonly', textvariable=self.weight_unit).pack(side=tk.LEFT, padx=4)
+        ttk.Combobox(wrow, values=['kg', 'lb'], width=5, state='readonly',
+                     textvariable=self.weight_unit).pack(side=tk.LEFT, padx=4)
 
         r += 1
-        ttk.Checkbutton(frm, text="Eaten recently (slows absorption)", variable=self.eaten_recently).grid(row=r, column=0, columnspan=2, sticky='w', padx=6, pady=6)
+        ttk.Checkbutton(frm, text="Eaten recently (slows absorption)",
+                        variable=self.eaten_recently).grid(row=r, column=0, columnspan=2,
+                                                           sticky='w', padx=6, pady=6)
 
         # Buttons
         btns = ttk.Frame(self)
@@ -338,17 +349,38 @@ class ProfileFrame(ttk.Frame):
             columns=("name", "age", "height", "sex", "weight", "eaten"),
             show='headings',
             height=10
-)
+        )
 
-        # Define headers
-        self.tree.heading("name", text="Name")
-        self.tree.heading("age", text="Age")
-        self.tree.heading("height", text="Height (cm)")
-        self.tree.heading("sex", text="Sex")
-        self.tree.heading("weight", text="Weight (kg)")
-        self.tree.heading("eaten", text="Ate")
+        # Headings
+        self.tree.heading("name", text="Name", anchor="center")
+        self.tree.heading("age", text="Age", anchor="center")
+        self.tree.heading("height", text="Height (cm)", anchor="center")
+        self.tree.heading("sex", text="Sex", anchor="center")
+        self.tree.heading("weight", text="Weight (kg)", anchor="center")
+        self.tree.heading("eaten", text="Ate", anchor="center")
 
-        # Set column widths
+        # Columns
+        self.tree.column("name", width=120, anchor="center")
+        self.tree.column("age", width=60, anchor="center")
+        self.tree.column("height", width=100, anchor="center")
+        self.tree.column("sex", width=80, anchor="center")
+        self.tree.column("weight", width=100, anchor="center")
+        self.tree.column("eaten", width=60, anchor="center")
+
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.tree.bind('<<TreeviewSelect>>', self.on_select)
+
+        # ✅ Load saved profiles immediately at startup
+        self.refresh()
+                # Headings
+        self.tree.heading("name", text="Name", anchor="center")
+        self.tree.heading("age", text="Age", anchor="center")
+        self.tree.heading("height", text="Height (cm)", anchor="center")
+        self.tree.heading("sex", text="Sex", anchor="center")
+        self.tree.heading("weight", text="Weight (kg)", anchor="center")
+        self.tree.heading("eaten", text="Ate", anchor="center")
+
+        # Columns (width + centering)
         self.tree.column("name", width=120, anchor="center")
         self.tree.column("age", width=60, anchor="center")
         self.tree.column("height", width=100, anchor="center")
@@ -551,12 +583,27 @@ class CalculateFrame(ttk.Frame):
         rm_frame.pack(fill=tk.X, padx=8)
         ttk.Button(rm_frame, text="Remove Selected", command=self.remove_selected).pack(side=tk.LEFT)
 
-        # Calculate button and output
+         # Calculate button and output
         ttk.Button(self, text="Calculate BAC", command=self.calculate).pack(pady=8)
 
-        self.output = tk.Text(self, height=12)
-        self.output.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        self.output.configure(state='disabled')
+        # Frame to hold output + scrollbar
+        out_frame = ttk.Frame(self)
+        out_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        # Output text widget
+        self.output = tk.Text(
+            out_frame,
+            height=12,
+            wrap="word",
+            background="#f4f4f4",     # light grey
+            font=("Consolas", 10)     # monospaced
+        )
+        self.output.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Scrollbar
+        scroll = ttk.Scrollbar(out_frame, orient="vertical", command=self.output.yview)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.output.configure(yscrollcommand=scroll.set, state='disabled')
 
         self.bind('<<ShowFrame>>', lambda e: self.refresh())
 
