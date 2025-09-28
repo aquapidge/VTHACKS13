@@ -173,22 +173,6 @@ def nhtsa(consumed: List[Consumed], drinks: List[Drink], profile: Profile, beta6
     r = 0.49 if profile.sex.lower().startswith('f') else 0.58
     return widmark_bac_from_grams(grams, W, r, beta60, t_hours)
 
-def watson(consumed: List[Consumed], drinks: List[Drink], profile: Profile, beta60: float, t_hours: float) -> float:
-    grams = ethanol_grams(consumed, drinks)
-    W = profile.weight_kg
-    h_cm = profile.height_cm
-    y = profile.age
-    # rw in liters (TBW)
-    if profile.sex.lower().startswith('f'):
-        rw = (-2.097 + 0.1069 * h_cm + 0.04666 * W)
-    else:
-        rw = (2.447 - 0.09515 * y + 0.1074 * h_cm + 0.3362 * W)
-    if rw <= 0:
-        return 0.0
-    bac = (grams / (rw * 10.0)) - (beta60 * t_hours)  # L → dL
-    return max(0.0, bac)
-
-
 # Absorption window & sobriety estimate
 
 def absorption_window(eaten_recently: bool) -> timedelta:
@@ -652,10 +636,9 @@ class CalculateFrame(ttk.Frame):
         fr = forrest(self.controller.consumed, self.controller.drinks, p, beta, t_hours)
         lw = lewis(self.controller.consumed, self.controller.drinks, p, beta, t_hours)
         nh = nhtsa(self.controller.consumed, self.controller.drinks, p, beta, t_hours)
-        wt = watson(self.controller.consumed, self.controller.drinks, p, beta, t_hours)
 
         # Aggregate (simple mean) for overall estimate
-        values = [mm, fr, lw, nh, wt]
+        values = [mm, fr, lw, nh]
         current_bac = max(0.0, sum(values) / len(values))
 
         # Sober time estimate
@@ -674,7 +657,6 @@ class CalculateFrame(ttk.Frame):
         lines.append(f"  Forrest (1986):          {fr:.4f}")
         lines.append(f"  Lewis (1986):            {lw:.4f}")
         lines.append(f"  NHTSA (1994):            {nh:.4f}")
-        lines.append(f"  Watson et al. (1981):    {wt:.4f}")
         lines.append("")
         lines.append(f"Estimated BAC (mean): {current_bac:.4f} g/dL")
         lines.append(f"First sip: {min(datetime.fromisoformat(c.timestamp_iso) for c in self.controller.consumed):%Y-%m-%d %H:%M}")
@@ -714,9 +696,6 @@ class InfoFrame(ttk.Frame):
     "    TBW ≈ 0.73 × Lean mass (liters).\n\n"
     "• Lewis (1986): BAC = A/(W*rl) - (β60*t), where rl = 0.76 (men), 0.68 (women).\n\n"
     "• NHTSA (1994): BAC = (A*0.806)/(W*TBW*1000)*100 - (β60*t), TBW = 0.58 (men), 0.49 (women).\n\n"
-    "• Watson et al. (1981): BAC = A/(W*rw) - (β60*t), with rw (TBW) in L:\n"
-    "    males: rw = 2.447 - 0.09515*y + 0.1074*h + 0.3362*W;\n"
-    "    females: rw = -2.097 + 0.1069*h + 0.04666*W.\n\n"
     "Units: A = total volume (ml) × %ABV × density (0.79 g/ml) ÷ 10.\n"
     "W in kg, h in cm, y in years.\n\n"
     "Important health info: Alcohol affects people differently. Eating can delay absorption.\n"
